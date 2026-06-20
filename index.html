@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Склад SkyBud — Движение и учёт материалов</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0b1437 0%, #1b2a6b 50%, #1e293b 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.97);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.4);
+        }
+        h1 { text-align: center; color: #0f172a; margin-bottom: 8px; font-size: 2.4em; font-weight: 700; }
+        .subtitle { text-align: center; color: #64748b; margin-bottom: 8px; font-size: 1.1em; }
+        .version { text-align: center; color: #94a3b8; margin-bottom: 25px; font-size: 0.9em; }
+
+        /* Принципы учёта — горизонтальная лента нумерованных принципов */
+        .principles { margin-bottom: 30px; }
+        .principles-title { font-size: 1.05em; font-weight: 700; color: #1e3a8a; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+        /* По умолчанию (десктоп / 13") — строго 6 карточек в один ряд */
+        .principles-ribbon { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+        .principle-item { display: flex; align-items: flex-start; gap: 9px; background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.25s ease; }
+        .principle-item:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.1); }
+        .principle-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.85em; box-shadow: 0 2px 6px rgba(0,0,0,0.18); }
+        .principle-num.pn-1 { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+        .principle-num.pn-2 { background: linear-gradient(135deg, #0891b2, #0e7490); }
+        .principle-num.pn-3 { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+        .principle-num.pn-4 { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .principle-num.pn-5 { background: linear-gradient(135deg, #f97316, #ea580c); }
+        .principle-num.pn-6 { background: linear-gradient(135deg, #ea580c, #c2410c); }
+        .principle-body { padding-top: 1px; min-width: 0; }
+        .principle-head { display: block; color: #0f172a; font-size: 0.8em; font-weight: 700; margin-bottom: 2px; line-height: 1.25; }
+        .principle-text { font-size: 0.72em; color: #475569; line-height: 1.35; }
+
+        /* Планшет: 3 в ряд */
+        @media (max-width: 1100px) {
+            .principles-ribbon { grid-template-columns: repeat(3, 1fr); }
+            .principle-head { font-size: 0.85em; }
+            .principle-text { font-size: 0.78em; }
+        }
+        /* Маленький планшет / большой телефон: 2 в ряд */
+        @media (max-width: 700px) {
+            .principles-ribbon { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        }
+        /* Телефон: 1 в ряд */
+        @media (max-width: 460px) {
+            .principles-ribbon { grid-template-columns: 1fr; }
+            .principle-num { width: 30px; height: 30px; font-size: 0.95em; }
+        }
+
+        .funnel-container { overflow-x: auto; padding: 20px 0; }
+        .funnel { display: flex; flex-direction: column; gap: 30px; padding: 10px; }
+        .stage-section { display: flex; flex-direction: column; gap: 15px; }
+
+        .section-header { display: flex; align-items: center; gap: 15px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; flex-wrap: wrap; }
+        .section-title { font-size: 1.2em; font-weight: bold; color: white; padding: 10px 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .section-supply { background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); }
+        .section-accounting { background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%); }
+
+        .section-subtitle { color: #64748b; font-size: 0.95em; }
+        .section-description { background: #f8fafc; padding: 12px 16px; border-radius: 10px; font-size: 0.85em; color: #475569; border-left: 4px solid #2563eb; margin-top: 5px; }
+
+        .stages-flow { display: flex; gap: 15px; overflow-x: auto; padding: 15px 5px; align-items: flex-start; }
+
+        .stage-card { background: white; border-radius: 12px; min-width: 330px; max-width: 360px; border: 2px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: all 0.3s ease; flex-shrink: 0; }
+        .stage-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
+        .stage-card.supply-card:hover { border-color: #2563eb; }
+        .stage-card.accounting-card:hover { border-color: #f59e0b; }
+
+        .card-header { padding: 12px 15px; border-radius: 10px 10px 0 0; display: flex; align-items: center; gap: 12px; }
+        .supply-card .card-header { background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); }
+        .accounting-card .card-header { background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%); }
+
+        .card-id { background: rgba(255,255,255,0.25); color: white; padding: 6px 12px; border-radius: 8px; font-weight: bold; font-size: 0.9em; }
+        .card-title { color: white; font-weight: 600; font-size: 1em; }
+        .card-body { padding: 15px; }
+
+        .owner-section { margin-bottom: 12px; }
+        .owner-label { font-size: 0.75em; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .owner-name { font-weight: 600; color: #1e293b; font-size: 0.95em; }
+
+        /* Участники */
+        .participants-section { margin-bottom: 12px; }
+        .participants-label { font-size: 0.75em; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+        .participants-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .participant-chip { font-size: 0.75em; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 3px 10px; border-radius: 20px; }
+
+        /* Старт события */
+        .start-section { margin-bottom: 12px; padding: 9px 12px; background: #f0f9ff; border-radius: 8px; border-left: 3px solid #0ea5e9; font-size: 0.8em; color: #0c4a6e; line-height: 1.4; }
+        .start-section strong { color: #075985; }
+
+        .role-section { margin-bottom: 12px; padding: 10px; background: #f8fafc; border-radius: 8px; border-left: 3px solid; }
+        .role-section.role-engineer { border-left-color: #6366f1; }
+        .role-section.role-accountant { border-left-color: #06b6d4; }
+        .role-section.role-montage { border-left-color: #10b981; }
+        .role-section.role-brigade { border-left-color: #f97316; }
+        .role-section.role-supplier { border-left-color: #64748b; }
+
+        .role-title { font-size: 0.8em; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .role-title.role-engineer { color: #6366f1; }
+        .role-title.role-accountant { color: #0891b2; }
+        .role-title.role-montage { color: #10b981; }
+        .role-title.role-brigade { color: #ea580c; }
+        .role-title.role-supplier { color: #64748b; }
+
+        .role-actions { list-style: none; padding: 0; margin: 0; }
+        .role-actions li { font-size: 0.8em; color: #475569; padding: 3px 0; padding-left: 16px; position: relative; line-height: 1.4; }
+        .role-actions li::before { content: '•'; position: absolute; left: 4px; color: #94a3b8; }
+
+        /* Форма движения материалов (M5) */
+        .form-section { margin-top: 12px; padding: 12px; background: #fff7ed; border-radius: 8px; border: 1px solid #fdba74; }
+        .form-title { font-size: 0.78em; font-weight: 700; color: #9a3412; margin-bottom: 10px; text-transform: uppercase; display: flex; align-items: center; gap: 5px; }
+        .form-block { margin-bottom: 10px; }
+        .form-block:last-child { margin-bottom: 0; }
+        .form-block-label { font-size: 0.74em; font-weight: 600; color: #c2410c; margin-bottom: 5px; }
+        .form-table { width: 100%; border-collapse: collapse; font-size: 0.72em; }
+        .form-table th { background: #ffedd5; color: #9a3412; font-weight: 600; text-align: left; padding: 4px 8px; border: 1px solid #fed7aa; }
+        .form-table td { padding: 6px 8px; border: 1px solid #fed7aa; color: #7c2d12; height: 22px; }
+
+        .checklist-section { margin-top: 10px; padding: 10px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac; }
+        .checklist-title { font-size: 0.75em; font-weight: 600; color: #15803d; margin-bottom: 6px; text-transform: uppercase; display: flex; align-items: center; gap: 5px; }
+        .checklist-group-label { font-size: 0.72em; font-weight: 600; color: #6b7280; margin: 6px 0 3px 0; text-transform: uppercase; letter-spacing: 0.3px; }
+        .checklist-list { list-style: none; padding: 0; margin: 0; }
+        .checklist-list li { font-size: 0.78em; color: #374151; padding: 3px 0; padding-left: 22px; position: relative; line-height: 1.4; }
+        .checklist-list li::before { content: '☐'; position: absolute; left: 2px; color: #6b7280; font-size: 1em; }
+
+        .criteria-section { margin-top: 12px; padding: 10px; background: #fefce8; border-radius: 8px; border: 1px dashed #eab308; }
+        .criteria-title { font-size: 0.75em; font-weight: 600; color: #a16207; margin-bottom: 6px; text-transform: uppercase; }
+        .criteria-list { list-style: none; padding: 0; margin: 0; }
+        .criteria-list li { font-size: 0.78em; color: #713f12; padding: 2px 0; padding-left: 18px; position: relative; line-height: 1.4; }
+        .criteria-list li::before { content: '✓'; position: absolute; left: 2px; color: #16a34a; font-weight: bold; }
+
+        .comment-section { margin-top: 10px; padding: 10px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 8px; border: 1px solid #f59e0b; }
+        .comment-title { font-size: 0.75em; font-weight: 600; color: #92400e; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
+        .comment-text { font-size: 0.78em; color: #78350f; line-height: 1.4; }
+
+        .next-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 0.78em; color: #64748b; }
+        .next-section strong { color: #1e293b; }
+
+        .flow-arrow { display: flex; align-items: center; justify-content: center; color: #cbd5e0; font-size: 1.8em; padding: 0 5px; flex-shrink: 0; align-self: center; }
+
+        .transition-block { display: flex; align-items: center; justify-content: center; padding: 8px 20px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 10px; border: 2px dashed #f59e0b; flex-shrink: 0; align-self: center; }
+        .transition-text { font-size: 0.85em; color: #92400e; font-weight: bold; margin-right: 8px; }
+        .transition-icon { font-size: 1.3em; color: #f59e0b; }
+
+        .info-box { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 16px; padding: 25px; margin-top: 30px; display: flex; gap: 20px; justify-content: space-around; flex-wrap: wrap; border: 1px solid #e2e8f0; }
+        .info-item { text-align: center; padding: 15px 25px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .info-number { font-size: 2.2em; font-weight: bold; }
+        .info-number.supply-num { color: #2563eb; }
+        .info-number.accounting-num { color: #f59e0b; }
+        .info-number.total-num { background: linear-gradient(135deg, #2563eb 0%, #06b6d4 50%, #f97316 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .info-label { font-size: 0.85em; color: #64748b; margin-top: 5px; font-weight: 500; }
+
+        .legend { display: flex; gap: 25px; justify-content: center; margin-top: 25px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.9em; color: #475569; }
+        .legend-color { width: 18px; height: 18px; border-radius: 5px; }
+        .legend-supply { background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); }
+        .legend-accounting { background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%); }
+
+        /* Легенда ролей */
+        .roles-legend { display: flex; gap: 18px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+        .roles-legend .legend-item { font-size: 0.82em; }
+        .rl-engineer { background: #6366f1; }
+        .rl-accountant { background: #06b6d4; }
+        .rl-montage { background: #10b981; }
+        .rl-brigade { background: #f97316; }
+        .rl-supplier { background: #64748b; }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .container { padding: 18px; border-radius: 18px; }
+            h1 { font-size: 1.5em; }
+            .subtitle { font-size: 0.95em; }
+            .stage-card { min-width: 270px; max-width: 300px; }
+            .info-box { gap: 12px; padding: 16px; }
+            .info-item { padding: 12px 16px; }
+            .info-number { font-size: 1.8em; }
+        }
+        @media (max-width: 460px) {
+            h1 { font-size: 1.25em; }
+            .container { padding: 14px; }
+            .stage-card { min-width: 240px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📦 Склад SkyBud: Движение и учёт материалов</h1>
+    <p class="subtitle">Обеспечение объекта → Учёт → Пополнение склада автомобиля | Полный цикл материального учёта</p>
+    <p class="version">v1.0 — Процесс движения и учёта материалов SKYBUD</p>
+
+    <div class="principles">
+        <div class="principles-title">📐 Принципы учёта материалов</div>
+        <div class="principles-ribbon">
+            <div class="principle-item">
+                <div class="principle-num pn-1">1</div>
+                <div class="principle-body">
+                    <span class="principle-head">Объект — отдельный склад</span>
+                    <span class="principle-text">Каждый объект является отдельным складом.</span>
+                </div>
+            </div>
+            <div class="principle-item">
+                <div class="principle-num pn-2">2</div>
+                <div class="principle-body">
+                    <span class="principle-head">Автомобиль — отдельный склад</span>
+                    <span class="principle-text">Каждый автомобиль является отдельным складом.</span>
+                </div>
+            </div>
+            <div class="principle-item">
+                <div class="principle-num pn-3">3</div>
+                <div class="principle-body">
+                    <span class="principle-head">Поступление из 2 источников</span>
+                    <span class="principle-text">Материалы поступают на объект от поставщика или со склада автомобиля.</span>
+                </div>
+            </div>
+            <div class="principle-item">
+                <div class="principle-num pn-4">4</div>
+                <div class="principle-body">
+                    <span class="principle-head">Возврат только на авто</span>
+                    <span class="principle-text">Материалы могут возвращаться только на склад автомобиля.</span>
+                </div>
+            </div>
+            <div class="principle-item">
+                <div class="principle-num pn-5">5</div>
+                <div class="principle-body">
+                    <span class="principle-head">Норматив неприкосновенен</span>
+                    <span class="principle-text">Нормативный остаток склада автомобиля не используется для комплектации объекта.</span>
+                </div>
+            </div>
+            <div class="principle-item">
+                <div class="principle-num pn-6">6</div>
+                <div class="principle-body">
+                    <span class="principle-head">Данные для экономики</span>
+                    <span class="principle-text">Данные учёта используются для расчёта себестоимости и юнит-экономики объекта.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="funnel-container">
+        <div class="funnel" id="funnel"></div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-color legend-supply"></div><span>Обеспечение объекта (S0, M1–M4)</span></div>
+        <div class="legend-item"><div class="legend-color legend-accounting"></div><span>Учёт и пополнение (M5–M8)</span></div>
+    </div>
+
+    <div class="roles-legend">
+        <div class="legend-item"><div class="legend-color rl-engineer"></div><span>Инженер-ассистент</span></div>
+        <div class="legend-item"><div class="legend-color rl-accountant"></div><span>Помощник / бухгалтер</span></div>
+        <div class="legend-item"><div class="legend-color rl-montage"></div><span>Montageleiter</span></div>
+        <div class="legend-item"><div class="legend-color rl-brigade"></div><span>Монтажная бригада</span></div>
+        <div class="legend-item"><div class="legend-color rl-supplier"></div><span>Поставщик</span></div>
+    </div>
+
+    <div class="info-box">
+        <div class="info-item"><div class="info-number supply-num">5</div><div class="info-label">Этапов ОБЕСПЕЧЕНИЕ</div></div>
+        <div class="info-item"><div class="info-number accounting-num">4</div><div class="info-label">Этапов УЧЁТ И ПОПОЛНЕНИЕ</div></div>
+        <div class="info-item"><div class="info-number total-num">9</div><div class="info-label">Всего этапов</div></div>
+    </div>
+</div>
+
+<script>
+const data = {
+    supply: {
+        title: "ОБЕСПЕЧЕНИЕ ОБЪЕКТА",
+        subtitle: "Подготовка → Планирование → Закупка → Поставка → Оприходование",
+        sectionClass: "section-supply",
+        cardClass: "supply-card",
+        description: "Подготовка системы учёта и обеспечение объекта материалами: от справочника материалов до зачисления поставки на склад объекта.",
+        stages: [
+            {
+                id: "S0", title: "Подготовка к запуску системы материального учёта", owner: "Инженер-ассистент",
+                participants: ["Помощник / бухгалтер", "Montageleiter"],
+                roles: [
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "формирует единый справочник материалов компании" },
+                            { text: "присваивает код каждой материальной позиции" },
+                            { text: "определяет единицы измерения для каждого материала" },
+                            { text: "формирует типовую спецификацию склада автомобиля" },
+                            { text: "определяет нормативное количество материалов для комплектации автомобиля" },
+                            { text: "определяет минимально допустимые остатки по каждой позиции" },
+                            { text: "разрабатывает форму движения материалов для монтажной бригады" }
+                        ]
+                    },
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "создаёт в учётной системе склады автомобилей" },
+                            { text: "создаёт шаблон склада объекта" },
+                            { text: "проверяет возможность учёта прихода, расхода и перемещения материалов" },
+                            { text: "проверяет корректность отображения остатков в системе" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "проверяет перечень типовых материалов склада автомобиля" },
+                            { text: "предоставляет предложения по нормативным остаткам" },
+                            { text: "согласовывает типовую комплектацию автомобилей" },
+                            { text: "проверяет удобство использования формы движения материалов" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Создан справочник материалов" },
+                        { text: "Всем материалам присвоены коды" },
+                        { text: "Определены единицы измерения" },
+                        { text: "Сформирована типовая спецификация склада автомобиля" },
+                        { text: "Определены нормативные остатки материалов" },
+                        { text: "Созданы склады автомобилей" },
+                        { text: "Создан шаблон склада объекта" },
+                        { text: "Разработана форма движения материалов для монтажной бригады" },
+                        { text: "Проведено тестовое внесение движения материалов" }
+                    ]}
+                ],
+                criteria: ["Система материального учёта подготовлена к работе", "Созданы справочник, склады автомобилей и объектов, типовая спецификация и форма движения материалов"],
+                next: "M1. Планирование потребности в материалах."
+            },
+            {
+                id: "M1", title: "Планирование потребности в материалах", owner: "Инженер-ассистент",
+                participants: ["Montageleiter"],
+                startEvent: "Проект передан в производство.",
+                roles: [
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "анализирует утверждённую калькуляцию проекта" },
+                            { text: "определяет перечень материалов, необходимых для выполнения работ" },
+                            { text: "определяет ориентировочные сроки потребности в материалах" },
+                            { text: "формирует план обеспечения объекта материалами" },
+                            { text: "согласовывает план обеспечения с Montageleiter" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "проверяет возможность выполнения стартовых работ в соответствии с графиком монтажа" },
+                            { text: "предоставляет информацию о готовности бригады к началу работ" },
+                            { text: "согласовывает последовательность обеспечения объекта материалами" },
+                            { text: "сообщает о необходимости дополнительных материалов или корректировок" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Проект передан в производство" },
+                        { text: "Калькуляция проекта проверена" },
+                        { text: "Сформирован перечень необходимых материалов" },
+                        { text: "Определены ориентировочные сроки потребности в материалах" },
+                        { text: "Сформирован план обеспечения объекта материалами" },
+                        { text: "План согласован с Montageleiter" }
+                    ]}
+                ],
+                criteria: ["Сформирован и согласован перечень материалов, необходимых для выполнения работ на объекте"],
+                next: "M2. Закупка и поставка материалов."
+            },
+            {
+                id: "M2", title: "Закупка и поставка материалов", owner: "Инженер-ассистент",
+                participants: ["Montageleiter", "Помощник / бухгалтер"],
+                startEvent: "Завершено планирование потребности в материалах.",
+                roles: [
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "проверяет фактические остатки материалов на складах автомобилей" },
+                            { text: "определяет избыточные остатки сверх нормативной комплектации автомобиля" },
+                            { text: "принимает решение об использовании избыточных материалов для объекта" },
+                            { text: "уменьшает объём закупки на количество доступных избыточных материалов" },
+                            { text: "формирует финальный заказ поставщику" },
+                            { text: "определяет перечень материалов, которые берутся со склада автомобиля" },
+                            { text: "передаёт Montageleiter перечень материалов (от поставщика и со склада авто)" },
+                            { text: "контролирует своевременность поставки материалов на объект" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "подтверждает возможность использования избыточных материалов со склада авто" },
+                            { text: "организует передачу материалов со склада автомобиля на объект" },
+                            { text: "контролирует наличие материалов для непрерывного выполнения работ" }
+                        ]
+                    },
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "получает от поставщиков расходные накладные" },
+                            { text: "проверяет наличие привязки документов к соответствующему объекту" },
+                            { text: "готовит документы для оприходования материалов на склад объекта" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Проверены фактические остатки складов автомобилей" },
+                        { text: "Определены избыточные остатки материалов" },
+                        { text: "Определён перечень материалов для использования со склада авто" },
+                        { text: "Сформирован финальный заказ поставщику" },
+                        { text: "Montageleiter получил перечень материалов со склада автомобиля" },
+                        { text: "Montageleiter получил перечень материалов от поставщика" },
+                        { text: "Заказ передан поставщику" },
+                        { text: "Поставка материалов запланирована" }
+                    ]}
+                ],
+                criteria: ["Определён источник обеспечения каждой позиции", "Сформирован заказ поставщику", "Montageleiter получил информацию по обеспечению объекта"],
+                comment: "Правило: материалы со склада автомобиля используются только в пределах фактического излишка сверх нормативного остатка. Нормативный остаток поддерживается постоянно и для комплектации объекта не используется.",
+                next: "M3. Поставка материалов на объект."
+            },
+            {
+                id: "M3", title: "Поставка материалов на объект", owner: "Инженер-ассистент",
+                participants: ["Поставщик", "Montageleiter"],
+                startEvent: "Заказ передан поставщику.",
+                roles: [
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "контролирует выполнение заказа поставщиком" },
+                            { text: "контролирует сроки поставки материалов" },
+                            { text: "уточняет изменения в датах поставки при необходимости" },
+                            { text: "координирует поставку материалов на объект" },
+                            { text: "информирует Montageleiter о дате и составе поставки" },
+                            { text: "контролирует устранение расхождений при неполной поставке" }
+                        ]
+                    },
+                    {
+                        name: "Поставщик", class: "role-supplier",
+                        actions: [
+                            { text: "комплектует заказ" },
+                            { text: "отгружает материалы на объект" },
+                            { text: "формирует расходные документы" },
+                            { text: "передаёт документы в учётную систему компании" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "организует приёмку материалов на объекте" },
+                            { text: "подтверждает факт получения материалов на объекте" },
+                            { text: "сообщает об отсутствующих или повреждённых материалах" },
+                            { text: "информирует Инженера-ассистента о выявленных несоответствиях" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Заказ принят поставщиком" },
+                        { text: "Дата поставки согласована" },
+                        { text: "Montageleiter уведомлён о поставке" },
+                        { text: "Материалы доставлены на объект" },
+                        { text: "Расходные документы сформированы" },
+                        { text: "Информация о поставке зафиксирована" },
+                        { text: "Расхождения отсутствуют или устранены" }
+                    ]}
+                ],
+                criteria: ["Материалы доставлены на объект", "Документы сформированы и переданы для учёта"],
+                next: "M4. Оприходование материалов на склад объекта."
+            },
+            {
+                id: "M4", title: "Оприходование материалов на склад объекта", owner: "Помощник / бухгалтер",
+                participants: ["Инженер-ассистент"],
+                startEvent: "Поставщик передал расходные документы в систему учёта.",
+                roles: [
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "получает расходные документы поставщика" },
+                            { text: "проверяет корректность привязки документов к объекту" },
+                            { text: "проверяет соответствие расходной накладной заказу" },
+                            { text: "проверяет полноту информации в расходных документах" },
+                            { text: "оприходует материалы на склад соответствующего объекта" },
+                            { text: "фиксирует приход материалов в системе учёта" },
+                            { text: "контролирует корректность остатков склада объекта" },
+                            { text: "сообщает о выявленных несоответствиях" }
+                        ]
+                    },
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "предоставляет разъяснения по материалам или объекту при вопросах" },
+                            { text: "участвует в решении расхождений между заказом и поставкой" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Получены расходные документы" },
+                        { text: "Проверена привязка к объекту" },
+                        { text: "Проверен перечень материалов" },
+                        { text: "Материалы оприходованы на склад объекта" },
+                        { text: "Обновлены остатки склада объекта" },
+                        { text: "Несоответствия отсутствуют или устранены" }
+                    ]}
+                ],
+                criteria: ["Все поставленные материалы отражены в системе учёта и зачислены на склад соответствующего объекта"],
+                next: "M5. Фиксация движения материалов между объектом и складом автомобиля."
+            }
+        ],
+        transition: { text: "ОБЕСПЕЧЕНИЕ → УЧЁТ", show: true }
+    },
+
+    accounting: {
+        title: "УЧЁТ И ПОПОЛНЕНИЕ",
+        subtitle: "Движение → Сверка → Контроль остатков → Пополнение",
+        sectionClass: "section-accounting",
+        cardClass: "accounting-card",
+        description: "Фиксация фактического движения материалов, сверка и обновление остатков склада автомобиля, контроль нормативов и пополнение до нормы.",
+        stages: [
+            {
+                id: "M5", title: "Фиксация движения материалов между объектом и складом автомобиля", owner: "Монтажная бригада",
+                participants: ["Montageleiter"],
+                startEvent: "Во время работ используются материалы со склада автомобиля или остаются неиспользованные. Форма движения передаётся после завершения объекта.",
+                roles: [
+                    {
+                        name: "Монтажная бригада", class: "role-brigade",
+                        actions: [
+                            { text: "фиксирует движение материалов между складом авто и объектом" },
+                            { text: "фиксирует материалы, взятые со склада автомобиля для работ" },
+                            { text: "фиксирует неиспользованные материалы, возвращённые на склад авто" },
+                            { text: "заполняет форму движения материалов" },
+                            { text: "передаёт форму Montageleiter для проверки" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "проверяет корректность заполнения формы" },
+                            { text: "сверяет зафиксированные материалы с выполненными работами" },
+                            { text: "подтверждает достоверность данных" },
+                            { text: "передаёт подтверждённую форму в офис для учёта" }
+                        ]
+                    }
+                ],
+                form: {
+                    title: "Форма движения материалов",
+                    blocks: [
+                        { label: "Материалы взяты со склада автомобиля", columns: ["Код", "Материал", "Количество"], rows: 3 },
+                        { label: "Материалы возвращены на склад автомобиля", columns: ["Код", "Материал", "Количество"], rows: 3 }
+                    ]
+                },
+                checklist: [
+                    { items: [
+                        { text: "Заполнен перечень материалов, взятых со склада автомобиля" },
+                        { text: "Заполнен перечень материалов, возвращённых на склад автомобиля" },
+                        { text: "Форма проверена Montageleiter" },
+                        { text: "Форма передана в офис" }
+                    ]}
+                ],
+                criteria: ["По объекту зафиксировано полное движение материалов", "Данные проверены и переданы для учёта"],
+                next: "M6. Сверка движения и обновление остатков склада автомобиля."
+            },
+            {
+                id: "M6", title: "Сверка движения материалов и обновление остатков склада автомобиля", owner: "Помощник / бухгалтер",
+                participants: ["Инженер-ассистент", "Montageleiter"],
+                startEvent: "Получена подтверждённая форма движения материалов по объекту.",
+                roles: [
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "получает форму движения материалов" },
+                            { text: "проверяет полноту предоставленной информации" },
+                            { text: "вносит в систему материалы, взятые со склада авто" },
+                            { text: "вносит в систему материалы, возвращённые на склад авто" },
+                            { text: "обновляет фактические остатки склада автомобиля" },
+                            { text: "определяет фактическое использование материалов по объекту" },
+                            { text: "формирует фактические материальные расходы по объекту" },
+                            { text: "передаёт данные для расчёта фактической себестоимости" },
+                            { text: "фиксирует завершение учёта материалов по объекту" }
+                        ]
+                    },
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "предоставляет разъяснения по использованным материалам при расхождениях" },
+                            { text: "использует данные для анализа план/факт и юнит-экономики" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "предоставляет дополнительные пояснения по движению материалов" },
+                            { text: "подтверждает фактическое использование материалов при вопросах" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Получена форма движения материалов" },
+                        { text: "Проверена полнота данных" },
+                        { text: "Зафиксированы материалы, взятые со склада автомобиля" },
+                        { text: "Зафиксированы материалы, возвращённые на склад автомобиля" },
+                        { text: "Обновлены остатки склада автомобиля" },
+                        { text: "Рассчитано фактическое использование материалов по объекту" },
+                        { text: "Данные переданы для анализа себестоимости" }
+                    ]}
+                ],
+                criteria: ["Остатки склада автомобиля обновлены", "Фактическое использование материалов определено и готово для расчёта себестоимости и юнит-экономики"],
+                next: "M7. Контроль минимальных остатков."
+            },
+            {
+                id: "M7", title: "Контроль минимальных остатков", owner: "Помощник / бухгалтер",
+                participants: ["Инженер-ассистент"],
+                startEvent: "Обновлены фактические остатки склада автомобиля после завершения учёта по объекту.",
+                roles: [
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "проверяет фактические остатки материалов склада автомобиля" },
+                            { text: "сравнивает фактические остатки с нормативными" },
+                            { text: "определяет позиции ниже установленного норматива" },
+                            { text: "формирует перечень материалов для пополнения" },
+                            { text: "передаёт информацию Инженеру-ассистенту для закупки" }
+                        ]
+                    },
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "получает перечень материалов для пополнения" },
+                            { text: "проверяет потребность в закупке" },
+                            { text: "согласовывает перечень материалов для пополнения склада авто" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Обновлены фактические остатки склада автомобиля" },
+                        { text: "Выполнена проверка нормативных остатков" },
+                        { text: "Определены дефицитные позиции" },
+                        { text: "Сформирован перечень материалов для пополнения" },
+                        { text: "Инженер-ассистент получил перечень на закупку" }
+                    ]}
+                ],
+                criteria: ["Определены все позиции, требующие пополнения для восстановления нормативного склада автомобиля", "Сформирован перечень для закупки"],
+                next: "M8. Пополнение склада автомобиля."
+            },
+            {
+                id: "M8", title: "Пополнение склада автомобиля", owner: "Инженер-ассистент",
+                participants: ["Помощник / бухгалтер", "Montageleiter", "Поставщик"],
+                startEvent: "Сформирован перечень материалов, остаток которых ниже нормативного уровня.",
+                roles: [
+                    {
+                        name: "Инженер-ассистент", class: "role-engineer",
+                        actions: [
+                            { text: "анализирует перечень материалов для пополнения" },
+                            { text: "определяет необходимый объём закупки" },
+                            { text: "формирует заказ поставщику" },
+                            { text: "контролирует сроки поставки" },
+                            { text: "информирует Montageleiter о запланированном пополнении" }
+                        ]
+                    },
+                    {
+                        name: "Поставщик", class: "role-supplier",
+                        actions: [
+                            { text: "комплектует заказ" },
+                            { text: "отгружает материалы" },
+                            { text: "формирует расходные документы" },
+                            { text: "передаёт документы в систему учёта" }
+                        ]
+                    },
+                    {
+                        name: "Montageleiter", class: "role-montage",
+                        actions: [
+                            { text: "организует получение материалов для склада автомобиля" },
+                            { text: "контролирует фактическое поступление материалов" },
+                            { text: "сообщает об отсутствующих или повреждённых позициях" }
+                        ]
+                    },
+                    {
+                        name: "Помощник / бухгалтер", class: "role-accountant",
+                        actions: [
+                            { text: "получает расходные документы" },
+                            { text: "оприходует материалы на соответствующий склад автомобиля" },
+                            { text: "обновляет фактические остатки склада автомобиля" },
+                            { text: "контролирует достижение нормативных остатков" }
+                        ]
+                    }
+                ],
+                checklist: [
+                    { items: [
+                        { text: "Сформирован перечень материалов для пополнения" },
+                        { text: "Создан заказ поставщику" },
+                        { text: "Заказ передан поставщику" },
+                        { text: "Материалы поставлены" },
+                        { text: "Получены расходные документы" },
+                        { text: "Материалы оприходованы на склад автомобиля" },
+                        { text: "Обновлены остатки склада автомобиля" },
+                        { text: "Достигнуты нормативные остатки" }
+                    ]}
+                ],
+                criteria: ["Склад автомобиля пополнен до нормативного уровня", "Остатки обновлены в системе учёта"],
+                next: "✓ Процесс завершён."
+            }
+        ],
+        transition: { text: "ПРОЦЕСС ЗАВЕРШЁН", show: true }
+    }
+};
+
+function renderFunnel() {
+    const funnelEl = document.getElementById('funnel');
+    funnelEl.innerHTML = '';
+    ['supply', 'accounting'].forEach(key => {
+        funnelEl.appendChild(createStageSection(data[key]));
+    });
+}
+
+function createStageSection(stageData) {
+    const section = document.createElement('div');
+    section.className = 'stage-section';
+
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    const title = document.createElement('div');
+    title.className = `section-title ${stageData.sectionClass}`;
+    title.textContent = stageData.title;
+    header.appendChild(title);
+    const subtitle = document.createElement('div');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = stageData.subtitle;
+    header.appendChild(subtitle);
+    section.appendChild(header);
+
+    if (stageData.description) {
+        const desc = document.createElement('div');
+        desc.className = 'section-description';
+        desc.textContent = stageData.description;
+        section.appendChild(desc);
+    }
+
+    const flow = document.createElement('div');
+    flow.className = 'stages-flow';
+
+    stageData.stages.forEach((stage, idx) => {
+        flow.appendChild(createStageCard(stage, stageData.cardClass));
+        if (idx < stageData.stages.length - 1) {
+            const arrow = document.createElement('div');
+            arrow.className = 'flow-arrow';
+            arrow.textContent = '→';
+            flow.appendChild(arrow);
+        }
+    });
+
+    if (stageData.transition && stageData.transition.show) {
+        const transition = document.createElement('div');
+        transition.className = 'transition-block';
+        transition.innerHTML = `<span class="transition-text">${stageData.transition.text}</span><span class="transition-icon">⟹</span>`;
+        flow.appendChild(transition);
+    }
+
+    section.appendChild(flow);
+    return section;
+}
+
+function createStageCard(stage, cardClass) {
+    const card = document.createElement('div');
+    card.className = `stage-card ${cardClass}`;
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+    const id = document.createElement('div');
+    id.className = 'card-id';
+    id.textContent = stage.id;
+    header.appendChild(id);
+    const titleEl = document.createElement('div');
+    titleEl.className = 'card-title';
+    titleEl.textContent = stage.title;
+    header.appendChild(titleEl);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    // Owner
+    const ownerSection = document.createElement('div');
+    ownerSection.className = 'owner-section';
+    const ownerLabel = document.createElement('div');
+    ownerLabel.className = 'owner-label';
+    ownerLabel.textContent = 'Ответственный:';
+    ownerSection.appendChild(ownerLabel);
+    const ownerName = document.createElement('div');
+    ownerName.className = 'owner-name';
+    ownerName.textContent = stage.owner;
+    ownerSection.appendChild(ownerName);
+    body.appendChild(ownerSection);
+
+    // Участники
+    if (stage.participants && stage.participants.length > 0) {
+        const partSection = document.createElement('div');
+        partSection.className = 'participants-section';
+        const partLabel = document.createElement('div');
+        partLabel.className = 'participants-label';
+        partLabel.textContent = 'Участники:';
+        partSection.appendChild(partLabel);
+        const chips = document.createElement('div');
+        chips.className = 'participants-chips';
+        stage.participants.forEach(p => {
+            const chip = document.createElement('span');
+            chip.className = 'participant-chip';
+            chip.textContent = p;
+            chips.appendChild(chip);
+        });
+        partSection.appendChild(chips);
+        body.appendChild(partSection);
+    }
+
+    // Старт события
+    if (stage.startEvent) {
+        const startSection = document.createElement('div');
+        startSection.className = 'start-section';
+        startSection.innerHTML = `<strong>▶ Старт:</strong> ${stage.startEvent}`;
+        body.appendChild(startSection);
+    }
+
+    // Roles
+    if (stage.roles && stage.roles.length > 0) {
+        stage.roles.forEach(role => {
+            const roleSection = document.createElement('div');
+            roleSection.className = `role-section ${role.class}`;
+
+            const roleTitle = document.createElement('div');
+            roleTitle.className = `role-title ${role.class}`;
+            roleTitle.textContent = role.name + ':';
+            roleSection.appendChild(roleTitle);
+
+            const actionsList = document.createElement('ul');
+            actionsList.className = 'role-actions';
+            role.actions.forEach(action => {
+                const li = document.createElement('li');
+                li.textContent = typeof action === 'string' ? action : action.text;
+                actionsList.appendChild(li);
+            });
+            roleSection.appendChild(actionsList);
+            body.appendChild(roleSection);
+        });
+    }
+
+    // Форма движения материалов
+    if (stage.form) {
+        const formSection = document.createElement('div');
+        formSection.className = 'form-section';
+        const formTitle = document.createElement('div');
+        formTitle.className = 'form-title';
+        formTitle.innerHTML = '📋 ' + stage.form.title;
+        formSection.appendChild(formTitle);
+
+        stage.form.blocks.forEach(block => {
+            const fb = document.createElement('div');
+            fb.className = 'form-block';
+            const fbLabel = document.createElement('div');
+            fbLabel.className = 'form-block-label';
+            fbLabel.textContent = block.label;
+            fb.appendChild(fbLabel);
+
+            const table = document.createElement('table');
+            table.className = 'form-table';
+            const thead = document.createElement('thead');
+            const trh = document.createElement('tr');
+            block.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                trh.appendChild(th);
+            });
+            thead.appendChild(trh);
+            table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            for (let r = 0; r < block.rows; r++) {
+                const tr = document.createElement('tr');
+                block.columns.forEach(() => {
+                    const td = document.createElement('td');
+                    td.innerHTML = '&nbsp;';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            fb.appendChild(table);
+            formSection.appendChild(fb);
+        });
+        body.appendChild(formSection);
+    }
+
+    // Checklist
+    if (stage.checklist && stage.checklist.length > 0) {
+        const clSection = document.createElement('div');
+        clSection.className = 'checklist-section';
+        const clTitle = document.createElement('div');
+        clTitle.className = 'checklist-title';
+        clTitle.innerHTML = '☑️ CRM Чек-лист:';
+        clSection.appendChild(clTitle);
+
+        stage.checklist.forEach(group => {
+            if (group.label) {
+                const groupLabel = document.createElement('div');
+                groupLabel.className = 'checklist-group-label';
+                groupLabel.textContent = group.label;
+                clSection.appendChild(groupLabel);
+            }
+            const clList = document.createElement('ul');
+            clList.className = 'checklist-list';
+            group.items.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = typeof item === 'string' ? item : item.text;
+                clList.appendChild(li);
+            });
+            clSection.appendChild(clList);
+        });
+        body.appendChild(clSection);
+    }
+
+    // Criteria
+    const criteriaSection = document.createElement('div');
+    criteriaSection.className = 'criteria-section';
+    const criteriaTitle = document.createElement('div');
+    criteriaTitle.className = 'criteria-title';
+    criteriaTitle.textContent = 'Критерий завершения:';
+    criteriaSection.appendChild(criteriaTitle);
+    const criteriaList = document.createElement('ul');
+    criteriaList.className = 'criteria-list';
+    stage.criteria.forEach(criterion => {
+        const li = document.createElement('li');
+        li.textContent = criterion;
+        criteriaList.appendChild(li);
+    });
+    criteriaSection.appendChild(criteriaList);
+    body.appendChild(criteriaSection);
+
+    // Comment
+    if (stage.comment) {
+        const commentSection = document.createElement('div');
+        commentSection.className = 'comment-section';
+        const commentTitle = document.createElement('div');
+        commentTitle.className = 'comment-title';
+        commentTitle.innerHTML = '💡 Важное правило:';
+        commentSection.appendChild(commentTitle);
+        const commentText = document.createElement('div');
+        commentText.className = 'comment-text';
+        commentText.textContent = stage.comment;
+        commentSection.appendChild(commentText);
+        body.appendChild(commentSection);
+    }
+
+    // Next
+    const nextSection = document.createElement('div');
+    nextSection.className = 'next-section';
+    nextSection.innerHTML = `<strong>Далее:</strong> ${stage.next}`;
+    body.appendChild(nextSection);
+
+    card.appendChild(body);
+    return card;
+}
+
+renderFunnel();
+</script>
+</body>
+</html>
